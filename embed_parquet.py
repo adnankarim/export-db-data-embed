@@ -19,7 +19,24 @@ def parse_args() -> argparse.Namespace:
     parser.add_argument("--output-dir", default="embedded_output")
     parser.add_argument("--model-name", default=DEFAULT_BOOTSTRAP_MODEL)
     parser.add_argument("--device", default="auto")
-    parser.add_argument("--candidate-batch-size", type=int, default=32)
+    parser.add_argument(
+        "--batch-size",
+        type=int,
+        default=32,
+        help="Default batch size used for both candidate and chunk embedding unless overridden.",
+    )
+    parser.add_argument(
+        "--candidate-batch-size",
+        type=int,
+        default=None,
+        help="Batch size for candidate-level embedding rows.",
+    )
+    parser.add_argument(
+        "--chunk-batch-size",
+        type=int,
+        default=None,
+        help="Batch size for grouped chunk contextual embedding rows.",
+    )
     return parser.parse_args()
 
 
@@ -29,6 +46,13 @@ def _records(df: pd.DataFrame) -> list[dict]:
 
 def main() -> None:
     args = parse_args()
+    candidate_batch_size = args.candidate_batch_size or args.batch_size
+    chunk_batch_size = args.chunk_batch_size or args.batch_size
+    if candidate_batch_size <= 0:
+        raise ValueError("--candidate-batch-size must be greater than 0")
+    if chunk_batch_size <= 0:
+        raise ValueError("--chunk-batch-size must be greater than 0")
+
     output_dir = Path(args.output_dir)
     output_dir.mkdir(parents=True, exist_ok=True)
 
@@ -46,8 +70,8 @@ def main() -> None:
     chunk_records = _records(chunk_df.sort_values(["profil_id", "chunk_sort_order"]))
 
     candidate_output = []
-    for start in range(0, len(candidate_records), args.candidate_batch_size):
-        batch = candidate_records[start : start + args.candidate_batch_size]
+    for start in range(0, len(candidate_records), candidate_batch_size):
+        batch = candidate_records[start : start + candidate_batch_size]
         vectors = embedder.encode_documents([row["text"] for row in batch])
         for row, vector in zip(batch, vectors):
             row_out = dict(row)
@@ -61,8 +85,8 @@ def main() -> None:
         grouped_chunks.setdefault(row["profil_id"], []).append(row)
 
     grouped_items = list(grouped_chunks.items())
-    for start in range(0, len(grouped_items), args.candidate_batch_size):
-        batch_groups = grouped_items[start : start + args.candidate_batch_size]
+    for start in range(0, len(grouped_items), chunk_batch_size):
+        batch_groups = grouped_items[start : start + chunk_batch_size]
         contextual_inputs = [[row["text"] for row in rows] for _, rows in batch_groups]
         contextual_vectors = embedder.encode_contextual_documents(contextual_inputs)
         for (_, rows), vectors in zip(batch_groups, contextual_vectors):
@@ -82,6 +106,9 @@ def main() -> None:
     manifest = {
         "model_name": args.model_name,
         "device": args.device,
+        "batch_size": args.batch_size,
+        "candidate_batch_size": candidate_batch_size,
+        "chunk_batch_size": chunk_batch_size,
         "candidate_rows": len(candidate_output),
         "chunk_rows": len(chunk_output),
         "candidate_output_parquet": str(candidate_output_path.name),
