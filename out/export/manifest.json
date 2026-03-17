@@ -1,0 +1,11 @@
+{
+  "mongo_db": "synthetic_recruitment",
+  "target_count": 10000,
+  "selected_candidates": 10000,
+  "chunk_rows": 122191,
+  "embedding_model": "perplexity-ai/pplx-embed-context-v1-0.6b",
+  "candidate_alias": "synthetic_candidate_profiles",
+  "chunk_alias": "synthetic_candidate_chunks",
+  "selected_candidates_parquet": "selected_candidates.parquet",
+  "chunk_input_parquet": "chunk_input.parquet"
+}
